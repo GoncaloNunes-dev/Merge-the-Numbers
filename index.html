@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arrasta e Combina — Rebirth Upgrade</title>
+<style>
+  *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  body{
+    background:linear-gradient(180deg,#071329 0%, #081026 100%);
+    color:#e6eef8;
+    min-height:100vh;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:40px 20px;
+  }
+  .container{
+    width:720px;max-width:96vw;
+    background:rgba(255,255,255,0.03);
+    padding:20px;
+    border-radius:16px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.5);
+  }
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:16px
+  }
+  h1{font-size:22px;margin:0}
+  .controls{display:flex;gap:10px;align-items:center}
+  button{
+    background:#10b981;
+    border:0;
+    padding:8px 14px;
+    border-radius:8px;
+    color:#042018;
+    cursor:pointer;
+    font-weight:600;
+    transition:all 0.2s ease;
+  }
+  button:hover{background:#34d399;transform:translateY(-1px)}
+  button:disabled{background:#334155;color:#aaa;cursor:not-allowed}
+  .score{
+    background:#0b1220;
+    padding:8px 12px;
+    border-radius:8px;
+    color:#cfece1;
+    font-weight:600;
+  }
+  .grid{
+    display:grid;
+    gap:12px;
+    background:rgba(255,255,255,0.02);
+    padding:12px;
+    border-radius:12px;
+  }
+  .cell{
+    background:rgba(255,255,255,0.015);
+    min-height:96px;
+    border-radius:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative
+  }
+  .tile{
+    width:100%;height:100%;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:8px;font-weight:800;font-size:26px;
+    color:#e6eef8;user-select:none;cursor:grab
+  }
+  .hint{font-size:14px;color:#9fb3bd;margin:12px 0 18px}
+  .upgrades{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .upgrade-card{
+    background:#111827;
+    padding:12px;
+    border-radius:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    box-shadow:inset 0 0 6px rgba(0,0,0,0.4);
+  }
+  .upgrade-card button{width:100%}
+  .trash{
+    margin:20px 0;
+    background:#5c1e1e;
+    color:#fff;
+    padding:20px;
+    text-align:center;
+    border-radius:12px;
+    font-weight:600;
+  }
+  .admin{
+    position:fixed;
+    top:20px;right:20px;
+    background:#111827;
+    padding:12px;
+    border-radius:12px;
+    display:none;
+    flex-direction:column;
+    gap:6px;
+    width:240px
+  }
+  .admin input,.admin button{padding:6px;border-radius:6px;border:none}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>Arrasta e Combina</h1>
+  <div class="controls">
+    <div class="score" id="score">Moedas: 0</div>
+    <button id="resetBtn">Recomeçar</button>
+    <button id="resetTotalBtn">Resetar Progresso</button>
+    <button id="adminLoginBtn">Admin</button>
+  </div>
+</header>
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="trash" id="trash">🗑 Arraste aqui para eliminar</div>
+  <div class="hint">Combine números para ganhar moedas. <br>Rebirth: ao atingir valor alvo, expande +5 espaços (máx 16 extra).</div>
+  
+  <div class="upgrades">
+    <div class="upgrade-card"><button id="upgradeCoinsBtn"></button></div>
+    <div class="upgrade-card"><button id="upgradeSpawnBtn"></button></div>
+    <div class="upgrade-card"><button id="upgradeLevelBtn"></button></div>
+    <div class="upgrade-card"><button id="rebirthBtn"></button></div>
+  </div>
+</main>
+</div>
+
+<div class="admin" id="adminPanel">
+  <strong>Admin Panel</strong>
+  <label>Moedas: <input type="number" id="adminCoins" /></label>
+  <label>Coin Mult: <input type="number" id="adminCoinMult" /></label>
+  <label>Spawn Interval(ms): <input type="number" id="adminSpawnInt" /></label>
+  <label>Spawn Level: <input type="number" id="adminSpawnLvl" /></label>
+  <label>Add Número: <input type="number" id="adminAddNum" /></label>
+  <button id="applyAdminBtn">Aplicar</button>
+  <button id="addNumberBtn">Adicionar Número</button>
+</div>
+
+<script>
+let baseSpaces=16,addedSpaces=0,maxAdded=16;
+let rebirthTarget=50,rebirthCount=0;
+let COLS=4,ROWS=4,board=[],cells=[];
+let coins=0,maxTileValue=1;
+const colorMap={};
+let coinMultiplier=1,spawnInterval=2000,spawnLevel=1;
+let upgradeCoinsCost=50,upgradeSpawnCost=50,upgradeLevelCost=50;
+
+// DOM refs
+const gridEl=document.getElementById('grid');
+const scoreEl=document.getElementById('score');
+const resetBtn=document.getElementById('resetBtn');
+const upgradeCoinsBtn=document.getElementById('upgradeCoinsBtn');
+const upgradeSpawnBtn=document.getElementById('upgradeSpawnBtn');
+const upgradeLevelBtn=document.getElementById('upgradeLevelBtn');
+const rebirthBtn=document.getElementById('rebirthBtn');
+const resetTotalBtn=document.getElementById('resetTotalBtn');
+const adminPanel=document.getElementById('adminPanel');
+const adminLoginBtn=document.getElementById('adminLoginBtn');
+const adminCoins=document.getElementById('adminCoins');
+const adminCoinMult=document.getElementById('adminCoinMult');
+const adminSpawnInt=document.getElementById('adminSpawnInt');
+const adminSpawnLvl=document.getElementById('adminSpawnLvl');
+const adminAddNum=document.getElementById('adminAddNum');
+const applyAdminBtn=document.getElementById('applyAdminBtn');
+const addNumberBtn=document.getElementById('addNumberBtn');
+const trashEl=document.getElementById('trash');
+
+function randomRGB(){return `rgb(${Math.floor(Math.random()*256)},${Math.floor(Math.random()*256)},${Math.floor(Math.random()*256)})`;}
+
+function createGrid(){
+  gridEl.innerHTML='';
+  const totalSpaces=baseSpaces+addedSpaces;
+  COLS=Math.ceil(Math.sqrt(totalSpaces));
+  ROWS=Math.ceil(totalSpaces/COLS);
+  gridEl.style.gridTemplateColumns=`repeat(${COLS},1fr)`;
+  cells=[];board=Array(totalSpaces).fill(null);
+  for(let i=0;i<totalSpaces;i++){
+    const cell=document.createElement('div');
+    cell.className='cell';cell.dataset.index=i;
+    cell.addEventListener('dragover',e=>e.preventDefault());
+    cell.addEventListener('drop',onDrop);
+    cells.push(cell);gridEl.appendChild(cell);
+  }
+}
+
+function render(){
+  maxTileValue=0;
+  for(let i=0;i<cells.length;i++){
+    const cell=cells[i];cell.innerHTML='';
+    const val=board[i];
+    if(val!==null){
+      if(val>maxTileValue) maxTileValue=val;
+      if(!colorMap[val]) colorMap[val]=randomRGB();
+      const tile=document.createElement('div');
+      tile.className='tile';tile.draggable=true;
+      tile.dataset.index=i;tile.dataset.value=val;
+      tile.textContent=val;tile.style.background=colorMap[val];
+      tile.addEventListener('dragstart',onDragStart);
+      cell.appendChild(tile);
+    }
+  }
+  scoreEl.textContent=`Moedas: ${coins}`;
+  upgradeCoinsBtn.textContent=`Upgrade Moedas x${coinMultiplier} (custo: ${upgradeCoinsCost})`;
+  upgradeSpawnBtn.textContent=`Upgrade Spawn (${spawnInterval}ms) (custo: ${upgradeSpawnCost})`;
+  upgradeLevelBtn.textContent=`Upgrade Nível Spawn lvl ${spawnLevel} (custo: ${upgradeLevelCost})`;
+  if(addedSpaces>=maxAdded){
+    rebirthBtn.textContent=`Rebirth: Máximo atingido`;rebirthBtn.disabled=true;
+  } else {
+    rebirthBtn.textContent=`Rebirth +5 espaços (alvo: ${rebirthTarget}) — Progresso: ${maxTileValue}`;
+    rebirthBtn.disabled=!(maxTileValue>=rebirthTarget);
+  }
+  saveGame();
+}
+
+function onDragStart(e){e.dataTransfer.setData('text/plain',e.target.dataset.index);}
+function onDrop(e){e.preventDefault();const fromIdx=parseInt(e.dataTransfer.getData('text/plain'),10);const toIdx=parseInt(e.target.closest('.cell').dataset.index,10);tryMove(fromIdx,toIdx);}
+function tryMove(fromIdx,toIdx){
+  if(fromIdx===toIdx) return;
+  const fromVal=board[fromIdx],toVal=board[toIdx];
+  if(fromVal==null) return;
+  if(toVal==null){board[toIdx]=fromVal;board[fromIdx]=null;render();return;}
+  if(fromVal===toVal){board[toIdx]=toVal+1;board[fromIdx]=null;coins+=board[toIdx]*coinMultiplier;render();}
+}
+function spawnTile(){
+  const empties=board.map((v,i)=>v===null?i:null).filter(i=>i!==null);
+  if(empties.length===0) return;
+  const pick=empties[Math.floor(Math.random()*empties.length)];
+  const spawnVal=Math.min(spawnLevel, maxTileValue+1);
+  board[pick]=spawnVal;if(!colorMap[spawnVal]) colorMap[spawnVal]=randomRGB();render();
+}
+function reset(){board=Array(baseSpaces+addedSpaces).fill(null);coins=0;render();}
+
+// upgrades
+upgradeCoinsBtn.onclick=()=>{if(coins>=upgradeCoinsCost){coins-=upgradeCoinsCost;coinMultiplier++;upgradeCoinsCost=Math.floor(upgradeCoinsCost*1.5);render();}};
+upgradeSpawnBtn.onclick=()=>{if(coins>=upgradeSpawnCost){coins-=upgradeSpawnCost;spawnInterval=Math.max(500,spawnInterval-200);upgradeSpawnCost=Math.floor(upgradeSpawnCost*1.5);restartSpawner();render();}};
+upgradeLevelBtn.onclick=()=>{if(coins>=upgradeLevelCost){coins-=upgradeLevelCost;spawnLevel++;upgradeLevelCost=Math.floor(upgradeLevelCost*1.5);render();}};
+rebirthBtn.onclick=()=>{if(maxTileValue>=rebirthTarget && addedSpaces<maxAdded){addedSpaces+=5;rebirthCount++;rebirthTarget=50*(rebirthCount+1);reset();createGrid();render();}};
+
+// reset total (com duas confirmações)
+resetTotalBtn.onclick=()=>{
+  if(confirm("⚠️ Tens a certeza que queres reiniciar o jogo do início?")){
+    if(confirm("Esta ação apaga TODO o progresso, tens mesmo a certeza?")){
+      baseSpaces=16;addedSpaces=0;rebirthTarget=50;rebirthCount=0;
+      coinMultiplier=1;spawnInterval=2000;spawnLevel=1;coins=0;
+      upgradeCoinsCost=50;upgradeSpawnCost=50;upgradeLevelCost=50;
+      createGrid();reset();render();alert("✅ Jogo reiniciado com sucesso!");
+    }
+  }
+};
+
+// trash
+trashEl.addEventListener('dragover',e=>e.preventDefault());
+trashEl.addEventListener('drop',e=>{e.preventDefault();const fromIdx=parseInt(e.dataTransfer.getData('text/plain'),10);board[fromIdx]=null;render();});
+
+// spawner
+let spawnTimer=null;
+function restartSpawner(){if(spawnTimer) clearInterval(spawnTimer);spawnTimer=setInterval(spawnTile,spawnInterval);}
+
+// admin
+adminLoginBtn.onclick=()=>{const pass=prompt("Password do admin:");if(pass==="cu"){adminPanel.style.display='flex';adminCoins.value=coins;adminCoinMult.value=coinMultiplier;adminSpawnInt.value=spawnInterval;adminSpawnLvl.value=spawnLevel;}};
+applyAdminBtn.onclick=()=>{coins=parseInt(adminCoins.value,10)||coins;coinMultiplier=parseInt(adminCoinMult.value,10)||coinMultiplier;spawnInterval=parseInt(adminSpawnInt.value,10)||spawnInterval;spawnLevel=parseInt(adminSpawnLvl.value,10)||spawnLevel;restartSpawner();render();};
+addNumberBtn.onclick=()=>{const num=parseInt(adminAddNum.value,10);if(!num)return;const empties=board.map((v,i)=>v===null?i:null).filter(i=>i!==null);if(empties.length>0){const idx=empties[Math.floor(Math.random()*empties.length)];board[idx]=num;if(!colorMap[num]) colorMap[num]=randomRGB();render();}};
+
+// save/load
+function saveGame(){const data={coins,coinMultiplier,spawnInterval,spawnLevel,board,addedSpaces,rebirthTarget,rebirthCount,upgradeCoinsCost,upgradeSpawnCost,upgradeLevelCost};localStorage.setItem("arrastaGameSave",JSON.stringify(data));}
+function loadGame(){const raw=localStorage.getItem("arrastaGameSave");if(raw){try{const d=JSON.parse(raw);coins=d.coins||0;coinMultiplier=d.coinMultiplier||1;spawnInterval=d.spawnInterval||2000;spawnLevel=d.spawnLevel||1;addedSpaces=d.addedSpaces||0;rebirthTarget=d.rebirthTarget||50;rebirthCount=d.rebirthCount||0;upgradeCoinsCost=d.upgradeCoinsCost||50;upgradeSpawnCost=d.upgradeSpawnCost||50;upgradeLevelCost=d.upgradeLevelCost||50;createGrid();board=d.board||Array(baseSpaces+addedSpaces).fill(null);restartSpawner();render();}catch(e){createGrid();reset();restartSpawner();}}else{createGrid();reset();restartSpawner();}}
+resetBtn.onclick=()=>{reset();};
+window.addEventListener("beforeunload", saveGame);
+
+loadGame();
+</script>
+</body>
+</html>
